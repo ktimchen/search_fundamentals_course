@@ -159,32 +159,57 @@ def create_query(user_query, filters, sort="_score", sortDir="desc", size=10, in
 # Give a user query from the UI and the query object we've built so far, adding in spelling suggestions
 def add_spelling_suggestions(query_obj, user_query):
     #### W2, L2, S1
-    print("TODO: IMPLEMENT ME")
-    #query_obj["suggest"] = {
-    #    "text": user_query,
-    #    "phrase_suggest": {
-
-    #    },
-    #    "term_suggest": {
-
-    #    }
-    #}
+    query_obj["suggest"] = {
+        "text": user_query,
+        "phrase_suggest": {
+            "phrase": {
+                "field": "suggest.trigrams",
+                "direct_generator": [ {
+                    "field": "suggest.trigrams",
+                    "min_word_length": 2,
+                    "suggest_mode": "popular"
+                } ],
+                "highlight": {
+                    "pre_tag": "<em>",
+                    "post_tag": "</em>"
+                }
+            }
+        },
+        "term_suggest": {
+            "term": {
+                "field":"suggest.text",
+                "min_word_length": 3,
+                "suggest_mode": "popular"
+            }
+        }
+    }
 
 
 # Given the user query from the UI, the query object we've built so far and a Pandas data GroupBy data frame,
 # construct and add a query that consists of the ids from the items that were clicked on by users for that query
-# priors_gb (loaded in __init__.py) is grouped on query and has a Series of SKUs/doc ids for every document that was cliecked on for this query
+# priors_gb (loaded in __init__.py) is grouped on query and has a Series of SKUs/doc ids for every document that was clicked on for this query
 def add_click_priors(query_obj, user_query, priors_gb):
     try:
-        prior_clicks_for_query = priors_gb.get_group(user_query)
+        prior_clicks_for_query = (priors_gb
+                .get_group(user_query)
+                .groupby("sku")[["category"]]
+                .count()
+                .rename(columns = {"category": "num_clicks"})
+                .sort_values(by="num_clicks", ascending=False)
+                .reset_index()
+                .query("num_clicks>10")
+                .assign(click_ratio = lambda df_: df_["num_clicks"]/df_["num_clicks"].sum())
+                [["sku", "click_ratio"]]
+                .astype(str)
+                .agg('^'.join, axis=1)
+            )
         if prior_clicks_for_query is not None and len(prior_clicks_for_query) > 0:
-            click_prior = ""
+            click_prior = " ".join(prior_clicks_for_query)
+            print("click_prior: \n", click_prior)
             #### W2, L1, S1
             # Create a string object of SKUs and weights that will boost documents matching the SKU
-            print("TODO: Implement me")
             if click_prior != "":
-                click_prior_query_obj = None # Implement a query object that matches on the ID or SKU with weights of
-                # This may feel like cheating, but it's really not, esp. in ecommerce where you have all this prior data,
+                click_prior_query_obj = {"query_string": {"query": click_prior, "fields": ["_id"]} }
                 if click_prior_query_obj is not None:
                     query_obj["query"]["function_score"]["query"]["bool"]["should"].append(click_prior_query_obj)
     except KeyError as ke:
@@ -205,7 +230,7 @@ def add_aggs(query_obj):
         },
         "missing_images": {
             "missing": {
-                "field": "image"
+                "field": "image.keyword"
             }
         },
         "regularPrice": {
