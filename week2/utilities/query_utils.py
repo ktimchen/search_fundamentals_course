@@ -198,7 +198,7 @@ def add_click_priors(query_obj, user_query, priors_gb):
                 .sort_values(by="num_clicks", ascending=False)
                 .reset_index()
                 .query("num_clicks>10")
-                .assign(click_ratio = lambda df_: df_["num_clicks"]/df_["num_clicks"].sum())
+                .assign(click_ratio = lambda df_: df_["num_clicks"]*2000/df_["num_clicks"].sum())
                 [["sku", "click_ratio"]]
                 .astype(str)
                 .agg('^'.join, axis=1)
